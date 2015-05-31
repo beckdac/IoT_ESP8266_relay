@@ -228,7 +228,6 @@ void loop(void)
 }
 
 void sendRootPage(void) {
-    // for displaying uptime
     int sec = millis() / 1000;
     int min = sec / 60;
     int hr = min / 60;
@@ -241,10 +240,9 @@ void sendRootPage(void) {
     message += state.hostname;
     message += "</title>\n";
     message += "\t\t<style>\n\t\t\tbody { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\n\t\t</style>\n\t</head>\n<body>\n\t\t<center>\n";
-    message += "\t\t\t<p>Uptime: " + String(hr, DEC) + \
-        ":" + String(min % 60, DEC) + \
-        ":" + String(sec % 60, DEC) + "</p>\n";
-    message += "\t\t<\/center>\n\t</body>\n</html>\n";
+    message += "\t\t\t<p>Uptime: ";
+    message += String(hr, DEC) + ":" + String(min % 60, DEC) + ":" + String(sec % 60, DEC);
+    message += "</p>\n\t\t<\/center>\n\t</body>\n</html>\n";
     server.send(768, "text/html", message);
 }
 
@@ -252,10 +250,13 @@ void sendRootPage(void) {
 // state, a version, feature tags, etc.
 #warning need to add uptime, heap and features to status json
 void sendAPIRootJSON(void) {
+    int sec = millis() / 1000;
+    int min = sec / 60;
+    int hr = min / 60;
+
     String message = "{\n\t";
-
-    message += "\tversion = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
-
+    message += "\t\"version\" = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
+    message += "\t\"uptime\" = {\n\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t},\n";
     message += "}";
 
     server.send(200, "text/json", message);
