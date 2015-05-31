@@ -28,7 +28,7 @@ The relay support is actually just driving the GPIOs with logic
 #define GPIO2_RELAY
 //#define GPIO2_DS18B60
 
-#ifdef defined(GPIO0_RELAY) && defined(GPIO0_DS18B60)
+#if defined(GPIO0_RELAY) && defined(GPIO0_DS18B60)
 	#error "GPIO0 cannot be assigned to a relay AND a DS18B60 simultaneously"
 #elif defined(GPIO2_RELAY) && defined(GPIO2_DS18B60)
 	#error "GPIO2 cannot be assigned to a relay AND a DS18B60 simultaneously"
@@ -37,9 +37,11 @@ The relay support is actually just driving the GPIOs with logic
 #endif
 
 // for the DS18B20s, we need to include the appropriate libraries
-#ifdef defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+#if defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
 #include <OneWire.h>
 #include <DallasTemperature.h>
+
+#define HAS_DS18B60
 
 #ifdef GPIO0_DS18B60
 #define ONE_WIRE_BUS 0
@@ -84,7 +86,7 @@ void handleRelay0Off(void);
 void handleRelay2On(void);
 void handleRelay2Off(void);
 #endif
-#if defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+#ifdef HAS_DS18B60
 void handleDS18B60(void);
 #endif
 void handleReset(void);
@@ -194,7 +196,7 @@ void setup(void)
     server.on("/relay/1/on", handleRelay2On);
     server.on("/relay/1/off", handleRelay2Off);
 #endif
-#if defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+#ifdef HAS_DS18B60
 	server.on("/temperature", handleDS18B60);
 #endif
 	server.on("/reset", handleReset);
@@ -210,41 +212,24 @@ void loop(void)
 }
 
 void sendIndexPage(void) {
-	char temp[768];
+	// for displaying uptime
 	int sec = millis() / 1000;
 	int min = sec / 60;
 	int hr = min / 60;
 
-	snprintf ( temp, 768,
-
-"<html>\
-  <head>\
-    <meta http-equiv='refresh' content='30'/>\
-    <title>%s</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <center>\
-        <p>Uptime: %02d:%02d:%02d</p>\
-        <hr>\
-        <h1>Relay 0</h1>\
-        <br>\
-        <table><tr><td>%s<a href=\"/relay/0/on\">On</a>%s</td><td>%s<a href=\"/relay/0/off\">Off</a>%s</td></table>\
-        <hr>\
-        <h1>Relay 1</h1>\
-        <br>\
-        <table><tr><td>%s<a href=\"/relay/1/on\">On</a>%s</td><td>%s<a href=\"/relay/1/off\">Off</a>%s</td></table>\
-    </center>\
-  </body>\
-</html>",
-		state.hostname,
-        hr, min % 60, sec % 60,
-        (state.gpio0_relay ? "<b>" : ""), (state.gpio0_relay ? "</b>" : ""), (state.gpio0_relay ? "" : "<b>"), (state.gpio0_relay ? "" : "</b>"),
-        (state.gpio2_relay ? "<b>" : ""), (state.gpio2_relay ? "</b>" : ""), (state.gpio2_relay ? "" : "<b>"), (state.gpio2_relay ? "" : "</b>")
-	);
-	server.send(768, "text/html", temp);
+	String message = "<html>\n\t<head>\n";
+#ifdef HAS_DS18B60
+    message += "\t\t<meta http-equiv='refresh' content='5'/>\n";
+#endif
+    message += "\t\t<title>";
+	message += state.hostname;
+	message += "</title>\n";
+	message += "\t\t<style>\n\t\t\tbody { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\n\t\t</style>\n\t</head>\n<body>\n\t\t<center>\n";
+	message += "\t\t\t<p>Uptime: " + String(hr, DEC) + \
+		":" + String(min % 60, DEC) + \
+		":" + String(sec % 60, DEC) + "</p>\n";
+	message += "\t\t<\/center>\n\t</body>\n</html>\n";
+	server.send(768, "text/html", message);
 }
 
 #ifdef GPIO0_RELAY
@@ -285,6 +270,8 @@ void handleRoot(void) {
 void handleReset(void) {
 	ESP.reset();
 }
+
+#warning need to add uptime, heap and features to status json
 
 void handleNotFound(void) {
 	String message = "{\n\t\"error\": \"File Not Found\",\n\t\"uri\" = \"}";
