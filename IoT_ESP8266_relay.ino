@@ -3,9 +3,12 @@ ESP8266 only Internet-of-Things device
 
 Currently supports ESP-01 w/ a relay or DS18B20 on GPIO0 and GPIO2.
 The relay support is actually just driving the GPIOs with logic
-	inverted.  That is, in relay mode, setting the relay to true (on)
-	brings the pin low with a digialwrite.
+    inverted.  That is, in relay mode, setting the relay to true (on)
+    brings the pin low with a digialwrite.
 */
+
+#define VERSION_MAJOR 0
+#define VERSION_MINOR 4
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
@@ -29,11 +32,11 @@ The relay support is actually just driving the GPIOs with logic
 //#define GPIO2_DS18B60
 
 #if defined(GPIO0_RELAY) && defined(GPIO0_DS18B60)
-	#error "GPIO0 cannot be assigned to a relay AND a DS18B60 simultaneously"
+    #error "GPIO0 cannot be assigned to a relay AND a DS18B60 simultaneously"
 #elif defined(GPIO2_RELAY) && defined(GPIO2_DS18B60)
-	#error "GPIO2 cannot be assigned to a relay AND a DS18B60 simultaneously"
+    #error "GPIO2 cannot be assigned to a relay AND a DS18B60 simultaneously"
 #elif defined(GPIO0_DS18B60) && defined(GPIO2_DS18B60)
-	#error "GPIO0 and GPIO2 are both configured for a DS18B60; OneWire only supports a single bus"
+    #error "GPIO0 and GPIO2 are both configured for a DS18B60; OneWire only supports a single bus"
 #endif
 
 // for the DS18B20s, we need to include the appropriate libraries
@@ -58,40 +61,47 @@ DallasTemperature DS18B20(&oneWire);
 
 // system state
 typedef struct stateStruct {
-	byte mac[6];
-	char hostname[HOSTNAME_MAX_LENGTH];
-	uint32_t chipId;
-	uint32_t flashChipId;
-	uint32_t flashChipSize;
-	uint32_t flashChipSpeed;
+    byte mac[6];
+    char hostname[HOSTNAME_MAX_LENGTH];
+    uint32_t chipId;
+    uint32_t flashChipId;
+    uint32_t flashChipSize;
+    uint32_t flashChipSpeed;
 #ifdef GPIO0_RELAY
-	bool gpio0_relay;
+    bool gpio0_relay;
 #elif GPIO0_DS18B60
 #endif
 #ifdef GPIO2_RELAY
-	bool gpio2_relay;
+    bool gpio2_relay;
 #elif GPIO2_DS18B60
 #endif
-	IPAddress ip;
+    IPAddress ip;
 } state_t;
 state_t state;
 
 // prototypes
-void handleRoot();
+void handleRoot(void);
+void handleAPIRoot(void);
 #ifdef GPIO0_RELAY
 void handleRelay0On(void);
 void handleRelay0Off(void);
+void handleAPIRelay0On(void);
+void handleAPIRelay0Off(void);
 #endif
 #ifdef GPIO2_RELAY
 void handleRelay2On(void);
 void handleRelay2Off(void);
+void handleAPIRelay2On(void);
+void handleAPIRelay2Off(void);
 #endif
 #ifdef HAS_DS18B60
 void handleDS18B60(void);
+void handleAPIDS18B60(void);
 #endif
 void handleReset(void);
+void sendRootPage(void);
+void sendAPIRootJSON(void);
 void handleNotFound(void);
-void sendIndexPage(void);
 
 // multicast DNS responder
 MDNSResponder mdns;
@@ -103,11 +113,11 @@ ESP8266WebServer server(80);
 void gpio0_relay(bool on) {
     state.gpio0_relay = on;
 #ifndef IGNORE_GPIO0
-	if (on) {
-    	digitalWrite(0, LOW);
-	} else {
-    	digitalWrite(0, HIGH);
-	}
+    if (on) {
+        digitalWrite(0, LOW);
+    } else {
+        digitalWrite(0, HIGH);
+    }
 #endif
 }
 #endif
@@ -115,11 +125,11 @@ void gpio0_relay(bool on) {
 #ifdef GPIO2_RELAY
 void gpio2_relay(bool on) {
     state.gpio2_relay = on;
-	if (on) {
-    	digitalWrite(2, LOW);
-	} else {
-    	digitalWrite(2, HIGH);
-	}
+    if (on) {
+        digitalWrite(2, LOW);
+    } else {
+        digitalWrite(2, HIGH);
+    }
 }
 #endif
 
@@ -132,11 +142,11 @@ void setup(void)
 {    
     Serial.begin(115200);
 
-	// setup the basic state structure
-	state.chipId = ESP.getChipId();
-	state.flashChipId = ESP.getFlashChipId();
-	state.flashChipSize = ESP.getFlashChipSize();
-	state.flashChipSpeed = ESP.getFlashChipSpeed();
+    // setup the basic state structure
+    state.chipId = ESP.getChipId();
+    state.flashChipId = ESP.getFlashChipId();
+    state.flashChipSize = ESP.getFlashChipSize();
+    state.flashChipSpeed = ESP.getFlashChipSpeed();
 
     // initialize pins features
 #ifdef GPIO0_RELAY
@@ -167,7 +177,7 @@ void setup(void)
     Serial.print("Connected to ");
     Serial.println(ssid);
     Serial.print("IP address: ");
-	state.ip = WiFi.localIP();
+    state.ip = WiFi.localIP();
     Serial.println(state.ip);
     // get mac address and assemble hostname for mDNS
     WiFi.macAddress(state.mac);
@@ -188,20 +198,26 @@ void setup(void)
 
     // setup web server
     server.on("/", handleRoot);
+    server.on("/api", handleAPIRoot);
 #ifdef GPIO0_RELAY
     server.on("/relay/0/on", handleRelay0On);
     server.on("/relay/0/off", handleRelay0Off);
+    server.on("/api/relay/0/on", handleAPIRelay0On);
+    server.on("/api/relay/0/off", handleAPIRelay0Off);
 #endif
 #ifdef GPIO2_RELAY
     server.on("/relay/1/on", handleRelay2On);
     server.on("/relay/1/off", handleRelay2Off);
+    server.on("/api/relay/1/on", handleAPIRelay2On);
+    server.on("/api/relay/1/off", handleAPIRelay2Off);
 #endif
 #ifdef HAS_DS18B60
-	server.on("/temperature", handleDS18B60);
+    server.on("/temperature", handleTemperature);
+    server.on("/api/temperature", handleAPITemperature);
 #endif
-	server.on("/reset", handleReset);
-	server.onNotFound(handleNotFound);
-	server.begin();
+    server.on("/reset", handleReset);
+    server.onNotFound(handleNotFound);
+    server.begin();
     Serial.println("HTTP server started");
 }
 
@@ -211,85 +227,127 @@ void loop(void)
     server.handleClient();
 }
 
-void sendIndexPage(void) {
-	// for displaying uptime
-	int sec = millis() / 1000;
-	int min = sec / 60;
-	int hr = min / 60;
+void sendRootPage(void) {
+    // for displaying uptime
+    int sec = millis() / 1000;
+    int min = sec / 60;
+    int hr = min / 60;
 
-	String message = "<html>\n\t<head>\n";
+    String message = "<html>\n\t<head>\n";
 #ifdef HAS_DS18B60
     message += "\t\t<meta http-equiv='refresh' content='5'/>\n";
 #endif
     message += "\t\t<title>";
-	message += state.hostname;
-	message += "</title>\n";
-	message += "\t\t<style>\n\t\t\tbody { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\n\t\t</style>\n\t</head>\n<body>\n\t\t<center>\n";
-	message += "\t\t\t<p>Uptime: " + String(hr, DEC) + \
-		":" + String(min % 60, DEC) + \
-		":" + String(sec % 60, DEC) + "</p>\n";
-	message += "\t\t<\/center>\n\t</body>\n</html>\n";
-	server.send(768, "text/html", message);
+    message += state.hostname;
+    message += "</title>\n";
+    message += "\t\t<style>\n\t\t\tbody { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\n\t\t</style>\n\t</head>\n<body>\n\t\t<center>\n";
+    message += "\t\t\t<p>Uptime: " + String(hr, DEC) + \
+        ":" + String(min % 60, DEC) + \
+        ":" + String(sec % 60, DEC) + "</p>\n";
+    message += "\t\t<\/center>\n\t</body>\n</html>\n";
+    server.send(768, "text/html", message);
+}
+
+// prepare a full status report with the full contents of 
+// state, a version, feature tags, etc.
+#warning need to add uptime, heap and features to status json
+void sendAPIRootJSON(void) {
+    String message = "{\n\t";
+
+    message += "\tversion = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
+
+    message += "}";
+
+    server.send(200, "text/json", message);
 }
 
 #ifdef GPIO0_RELAY
 void handleRelay0On(void) {
-    Serial.println("turning on relay on GPIO0");
+    Serial.println("web turning on relay on GPIO0");
     gpio0_relay(true);
-    sendIndexPage();
+    sendRootPage();
 }
 
 void handleRelay0Off(void) {
-    Serial.println("turning off relay on GPIO0");
+    Serial.println("web turning off relay on GPIO0");
     gpio0_relay(false);
-    sendIndexPage();
+    sendRootPage();
+}
+
+void handleAPIRelay0On(void) {
+    Serial.println("API turning on relay on GPIO0");
+    gpio0_relay(true);
+    sendAPIRootJSON();
+}
+
+void handleAPIRelay0Off(void) {
+    Serial.println("API turning off relay on GPIO0");
+    gpio0_relay(false);
+    sendAPIRootJSON();
 }
 #endif
 
 #ifdef GPIO2_RELAY
 void handleRelay2On(void) {
-    Serial.println("turning on relay on GPIO2");
+    Serial.println("web turning on relay on GPIO2");
     gpio2_relay(true);
-    sendIndexPage();
+    sendRootPage();
 }
 
 void handleRelay2Off(void) {
-    Serial.println("turning off relay on GPIO2");
+    Serial.println("web turning off relay on GPIO2");
     gpio2_relay(false);
-    sendIndexPage();
+    sendRootPage();
+}
+
+void handleAPIRelay2On(void) {
+    Serial.println("API turning on relay on GPIO2");
+    gpio2_relay(true);
+    sendAPIRootJSON();
+}
+
+void handleAPIRelay2Off(void) {
+    Serial.println("API turning off relay on GPIO2");
+    gpio2_relay(false);
+    sendAPIRootJSON();
 }
 #endif
 
-void handleDS18B60(void) {
+void handleTemperature(void) {
+}
+
+void handleAPITemperature(void) {
 }
 
 void handleRoot(void) {
-    sendIndexPage();
+    sendRootPage();
+}
+
+void handleAPIRoot(void) {
+    sendAPIRootJSON();
 }
 
 void handleReset(void) {
-	ESP.reset();
+    ESP.reset();
 }
 
-#warning need to add uptime, heap and features to status json
-
 void handleNotFound(void) {
-	String message = "{\n\t\"error\": \"File Not Found\",\n\t\"uri\" = \"}";
-	message += server.uri();
-	message += "\",\n\t\"method\": \"";
-	message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
-	message += "\",\n\t\"arguments\": [\n";
+    String message = "{\n\t\"error\": \"File Not Found\",\n\t\"uri\" = \"}";
+    message += server.uri();
+    message += "\",\n\t\"method\": \"";
+    message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
+    message += "\",\n\t\"arguments\": [\n";
 
-	for ( uint8_t i = 0; i < server.args(); i++ ) {
-		message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-		message += "\t\t\"";
-		message += server.argName(i);
-		message += "\": \"";
-		message += server.arg(i);
-		message += "\",\n";
-	}
+    for ( uint8_t i = 0; i < server.args(); i++ ) {
+        message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+        message += "\t\t\"";
+        message += server.argName(i);
+        message += "\": \"";
+        message += server.arg(i);
+        message += "\",\n";
+    }
 
-	message += "\n\t]\n}";
+    message += "\n\t]\n}";
 
-	server.send(404, "text/json", message);
+    server.send(404, "text/json", message);
 }
