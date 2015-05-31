@@ -84,6 +84,10 @@ void handleRelay0Off(void);
 void handleRelay2On(void);
 void handleRelay2Off(void);
 #endif
+#if defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+void handleDS18B60(void);
+#endif
+void handleReset(void);
 void handleNotFound(void);
 void sendIndexPage(void);
 
@@ -190,6 +194,10 @@ void setup(void)
     server.on("/relay/1/on", handleRelay2On);
     server.on("/relay/1/off", handleRelay2Off);
 #endif
+#if defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+	server.on("/temperature", handleDS18B60);
+#endif
+	server.on("/reset", handleReset);
 	server.onNotFound(handleNotFound);
 	server.begin();
     Serial.println("HTTP server started");
@@ -267,23 +275,34 @@ void handleRelay2Off(void) {
 }
 #endif
 
+void handleDS18B60(void) {
+}
+
 void handleRoot(void) {
     sendIndexPage();
 }
 
+void handleReset(void) {
+	ESP.reset();
+}
+
 void handleNotFound(void) {
-	String message = "File Not Found\n\n";
-	message += "URI: ";
+	String message = "{\n\t\"error\": \"File Not Found\",\n\t\"uri\" = \"}";
 	message += server.uri();
-	message += "\nMethod: ";
+	message += "\",\n\t\"method\": \"";
 	message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
-	message += "\nArguments: ";
-	message += server.args();
-	message += "\n";
+	message += "\",\n\t\"arguments\": [\n";
 
 	for ( uint8_t i = 0; i < server.args(); i++ ) {
-		message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
+		message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+		message += "\t\t\"";
+		message += server.argName(i);
+		message += "\": \"";
+		message += server.arg(i);
+		message += "\",\n";
 	}
 
-	server.send ( 404, "text/plain", message );
+	message += "\n\t]\n}";
+
+	server.send(404, "text/json", message);
 }
