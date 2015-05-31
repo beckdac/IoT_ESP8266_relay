@@ -256,7 +256,27 @@ void sendAPIRootJSON(void) {
 
     String message = "{\n\t";
     message += "\t\"version\" = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
-    message += "\t\"uptime\" = {\n\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t},\n";
+    message += "\t\"info\" = {\n";
+    message += "\t\t\"chipID\": " + String(state.chipId, DEC) + ",\n";
+    message += "\t\t\"flashChipId\": " + String(state.flashChipId, DEC) + ",\n";
+    message += "\t\t\"flashChipSize\": " + String(state.flashChipSize, DEC) + ",\n";
+    message += "\t\t\"flashChipSpeed\": " + String(state.flashChipSpeed, DEC) + ",\n";
+    message += "\t\t\"MAC\": \"" +
+            String(state.mac[0], HEX) + ":" +\
+            String(state.mac[1], HEX) + ":" +\
+            String(state.mac[2], HEX) + ":" +\
+            String(state.mac[3], HEX) + ":" +\
+            String(state.mac[4], HEX) + ":" +\
+            String(state.mac[5], HEX) + \
+        ",\n";
+    message += "\t},\n"; // info (static info about client)
+    message += "\t\"system\" = {"; // includes uptime and heap free
+    message += "\t\t\"uptime\" = {\n\t\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t\t},\n";
+    message += "\t\t\"heap\" = " + String(ESP.getFreeHeap(), DEC) + ",\n";
+    message += "\t\t\"ip\" = \"" + state.ip + "\",\n";
+    message += "\t}";   // system end (dynamic info about client)
+    message += "\t\"features\" = {\n";
+    message += "\t},\n"; // list of available features
     message += "}";
 
     server.send(200, "text/json", message);
