@@ -32,11 +32,29 @@ The relay support is actually just driving the GPIOs with logic
 	#error "GPIO0 cannot be assigned to a relay AND a DS18B60 simultaneously"
 #elif defined(GPIO2_RELAY) && defined(GPIO2_DS18B60)
 	#error "GPIO2 cannot be assigned to a relay AND a DS18B60 simultaneously"
+#elif defined(GPIO0_DS18B60) && defined(GPIO2_DS18B60)
+	#error "GPIO0 and GPIO2 are both configured for a DS18B60; OneWire only supports a single bus"
+#endif
+
+// for the DS18B20s, we need to include the appropriate libraries
+#ifdef defined(GPIO0_DS18B60) || defined(GPIO2_DS18B60)
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#ifdef GPIO0_DS18B60
+#define ONE_WIRE_BUS 0
+#elif GPIO2_DS18B60
+#define ONE_WIRE_BUS 2
+#else
+#error "unknown GPIO pin for OneWire bus"
+#endif
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature DS18B20(&oneWire);
 #endif
 
 #define HOSTNAME_MAX_LENGTH 12
 
-// state
+// system state
 typedef struct stateStruct {
 	byte mac[6];
 	char hostname[HOSTNAME_MAX_LENGTH];
@@ -47,12 +65,10 @@ typedef struct stateStruct {
 #ifdef GPIO0_RELAY
 	bool gpio0_relay;
 #elif GPIO0_DS18B60
-	float gpio0_temperature;
 #endif
 #ifdef GPIO2_RELAY
 	bool gpio2_relay;
 #elif GPIO2_DS18B60
-	float gpio2_temperature;
 #endif
 	IPAddress ip;
 } state_t;
