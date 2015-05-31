@@ -9,18 +9,34 @@
 */
 #include "wificred.h"
 
+// prototypes
+void handleRoot();
+void handleRelay0On(void);
+void handleRelay0Off(void);
+void handleRelay1On(void);
+void handleRelay1Off(void);
+void handleNotFound(void);
+void sendIndexPage(void);
+
 // MAC address of this unit
 byte mac[6];
-String mDNSName;
-const int mDNSNameCharLength = 12;
-char mDNSNameChar[mDNSNameCharLength];
+// mDNS name
+const int MDNS_NAME_MAX_LENGTH = 12;
+char mDNSName[MDNS_NAME_MAX_LENGTH];
+// state of the relays
+bool relay0 = false, relay1 = false;
 
 // multicast DNS responder
 MDNSResponder mdns;
 
-// TCP server at port 80 will respond to HTTP requests
-WiFiServer server(80);
+// Webserver on port 80
+ESP8266WebServer server(80);
 
+// setup the output serial port (used for debugging)
+// connect to the wifi AP
+// setup and start the mDNS responder with hostname ESP_XXYYZZ 
+//      where XXYYZZ are the lowercase upper bytes of the MAC address
+// setup and start the webserver
 void setup(void)
 {    
     Serial.begin(115200);
@@ -39,7 +55,7 @@ void setup(void)
     Serial.println(ssid);
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-
+    // get mac address and assemble hostname for mDNS
     WiFi.macAddress(mac);
 	Serial.print("MAC: ");
 	Serial.print(mac[5],HEX);
@@ -53,72 +69,119 @@ void setup(void)
 	Serial.print(mac[1],HEX);
 	Serial.print(":");
 	Serial.println(mac[0],HEX);
-    mDNSName = String("ESP_") + String(mac[5], HEX) + String(mac[4], HEX) + String(mac[3], HEX);
-    mDNSName.toCharArray(mDNSNameChar, mDNSNameCharLength);
-   
-    Serial.println("") 
-    if (!mdns.begin(mDNSNameChar, WiFi.localIP())) {
+    snprintf(mDNSName, MDNS_NAME_MAX_LENGTH,
+            "ESP_%X%X%X", mac[5], mac[4], mac[3]
+        );
+    // register hostname w/ mDNS 
+    Serial.println("");
+    if (!mdns.begin(mDNSName, WiFi.localIP())) {
         Serial.println("Error setting up MDNS responder!");
         while(1) { 
             delay(500);
             Serial.print(".");
         }
     }
-    Serial.println("mDNS responder started with hostname " + mDNSName);
-    
-    // Start TCP (HTTP) server
-    server.begin();
-    Serial.println("TCP server started");
+    Serial.print("mDNS responder started with hostname: ");
+    Serial.println(mDNSName);
+
+    // setup web server
+    server.on("/", handleRoot);
+    server.on("/relay/0/on", handleRelay0On);
+    server.on("/relay/0/off", handleRelay0Off);
+    server.on("/relay/1/on", handleRelay0On);
+    server.on("/relay/1/off", handleRelay0Off);
+	server.onNotFound(handleNotFound);
+	server.begin();
+    Serial.println("HTTP server started");
 }
 
 void loop(void)
 {
-    // Check if a client has connected
-    WiFiClient client = server.available();
-    if (!client) {
-        return;
-    }
-    Serial.println("");
-    Serial.println("New client");
-
-    // Wait for data from client to become available
-    while(client.connected() && !client.available()){
-        delay(1);
-    }
-    
-    // Read the first line of HTTP request
-    String req = client.readStringUntil('\r');
-    
-    // First line of HTTP request looks like "GET /path HTTP/1.1"
-    // Retrieve the "/path" part by finding the spaces
-    int addr_start = req.indexOf(' ');
-    int addr_end = req.indexOf(' ', addr_start + 1);
-    if (addr_start == -1 || addr_end == -1) {
-        Serial.print("Invalid request: ");
-        Serial.println(req);
-        return;
-    }
-    req = req.substring(addr_start + 1, addr_end);
-    Serial.print("Request: ");
-    Serial.println(req);
-    client.flush();
-    
-    String s;
-    if (req == "/")
-    {
-        IPAddress ip = WiFi.localIP();
-        String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-        s = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>Hello from ESP8266 at ";
-        s += ipStr;
-        s += "</html>\r\n\r\n";
-        Serial.println("Sending 200");
-    }
-    else
-    {
-        s = "HTTP/1.1 404 Not Found\r\n\r\n";
-        Serial.println("Sending 404");
-    }
-    client.print(s);
-    
-    Serial.println("Done with client");
+    mdns.update();
+    server.handleClient();
 }
+
+void sendIndexPage(void) {
+	char temp[768];
+	int sec = millis() / 1000;
+	int min = sec / 60;
+	int hr = min / 60;
+
+	snprintf ( temp, 400,
+
+"<html>\
+  <head>\
+    <meta http-equiv='refresh' content='5'/>\
+    <title>%s</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <center>\
+        <p>Uptime: %02d:%02d:%02d</p>\
+        <hr>\
+        <hr>\
+        <h1>Relay 0</h1>\
+        <br>\
+        <table><tr><td>%s<a href=\"/relay/0/on\">On</a>%s</td><td>%s<a href=\"/relay/0/off\">Off</a>%s</td></table>\
+        <hr>\
+        <h1>Relay 1</h1>\
+        <br>\
+        <table><tr><td>%s<a href=\"/relay/1/on\">On</a>%s</td><td>%s<a href=\"/relay/1/off\">Off</a>%s</td></table>\
+    </center>\
+  </body>\
+</html>",
+		mDNSName,
+        hr, min % 60, sec % 60,
+        (relay0 ? "<b>" : ""), (relay0 ? "</b>" : ""), (relay0 ? "" : "<b>"), (relay0 ? "" : "</b>"),
+        (relay1 ? "<b>" : ""), (relay1 ? "</b>" : ""), (relay1 ? "" : "<b>"), (relay1 ? "" : "</b>")
+	);
+	server.send(200, "text/html", temp);
+}
+
+void handleRelay0On(void) {
+    relay0 = true;
+    Serial.println("turning on relay 0");
+    sendIndexPage();
+}
+
+void handleRelay0Off(void) {
+    relay0 = false;
+    Serial.println("turning off relay 0");
+    sendIndexPage();
+}
+
+void handleRelay1On(void) {
+    relay1 = true;
+    Serial.println("turning on relay 1");
+    sendIndexPage();
+}
+
+void handleRelay1Off(void) {
+    relay1 = false;
+    Serial.println("turning off relay 1");
+    sendIndexPage();
+}
+
+void handleRoot(void) {
+    sendIndexPage();
+}
+
+void handleNotFound(void) {
+	String message = "File Not Found\n\n";
+	message += "URI: ";
+	message += server.uri();
+	message += "\nMethod: ";
+	message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
+	message += "\nArguments: ";
+	message += server.args();
+	message += "\n";
+
+	for ( uint8_t i = 0; i < server.args(); i++ ) {
+		message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
+	}
+
+	server.send ( 404, "text/plain", message );
+}
+
