@@ -9,6 +9,10 @@
 */
 #include "wificred.h"
 
+// define this to silently ignore making any changes to GPIO0
+#define IGNORE_GPIO0
+#undef IGNORE_GPIO0
+
 // prototypes
 void handleRoot();
 void handleRelay0On(void);
@@ -32,6 +36,30 @@ MDNSResponder mdns;
 // Webserver on port 80
 ESP8266WebServer server(80);
 
+void relay0On(void) {
+    relay0 = true;
+#ifndef IGNORE_GPIO0
+    digitalWrite(0, LOW);
+#endif
+}
+
+void relay0Off(void) {
+    relay0 = false;
+#ifndef IGNORE_GPIO0
+    digitalWrite(0, HIGH);
+#endif
+}
+
+void relay1On(void) {
+    relay1 = true;
+    digitalWrite(2, LOW);
+}
+
+void relay1Off(void) {
+    relay1 = false;
+    digitalWrite(2, HIGH);
+}
+
 // setup the output serial port (used for debugging)
 // connect to the wifi AP
 // setup and start the mDNS responder with hostname ESP_XXYYZZ 
@@ -41,11 +69,21 @@ void setup(void)
 {    
     Serial.begin(115200);
 
-    // Connect to WiFi network
+    // initialize pins & relays
+    // relay 0
+#ifndef IGNORE_GPIO0
+    pinMode(0, OUTPUT);
+#endif
+    relay0Off();
+    // relay 1
+    pinMode(2, OUTPUT);
+    relay1Off();
+
+    // connect to WiFi network
     WiFi.begin(ssid, password);
     Serial.println("");    
     
-    // Wait for connection
+    // wait for connection
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
@@ -88,8 +126,8 @@ void setup(void)
     server.on("/", handleRoot);
     server.on("/relay/0/on", handleRelay0On);
     server.on("/relay/0/off", handleRelay0Off);
-    server.on("/relay/1/on", handleRelay0On);
-    server.on("/relay/1/off", handleRelay0Off);
+    server.on("/relay/1/on", handleRelay1On);
+    server.on("/relay/1/off", handleRelay1Off);
 	server.onNotFound(handleNotFound);
 	server.begin();
     Serial.println("HTTP server started");
@@ -107,11 +145,11 @@ void sendIndexPage(void) {
 	int min = sec / 60;
 	int hr = min / 60;
 
-	snprintf ( temp, 400,
+	snprintf ( temp, 768,
 
 "<html>\
   <head>\
-    <meta http-equiv='refresh' content='5'/>\
+    <meta http-equiv='refresh' content='30'/>\
     <title>%s</title>\
     <style>\
       body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
@@ -120,7 +158,6 @@ void sendIndexPage(void) {
   <body>\
     <center>\
         <p>Uptime: %02d:%02d:%02d</p>\
-        <hr>\
         <hr>\
         <h1>Relay 0</h1>\
         <br>\
@@ -137,30 +174,30 @@ void sendIndexPage(void) {
         (relay0 ? "<b>" : ""), (relay0 ? "</b>" : ""), (relay0 ? "" : "<b>"), (relay0 ? "" : "</b>"),
         (relay1 ? "<b>" : ""), (relay1 ? "</b>" : ""), (relay1 ? "" : "<b>"), (relay1 ? "" : "</b>")
 	);
-	server.send(200, "text/html", temp);
+	server.send(768, "text/html", temp);
 }
 
 void handleRelay0On(void) {
-    relay0 = true;
     Serial.println("turning on relay 0");
+    relay0On();
     sendIndexPage();
 }
 
 void handleRelay0Off(void) {
-    relay0 = false;
     Serial.println("turning off relay 0");
+    relay0Off();
     sendIndexPage();
 }
 
 void handleRelay1On(void) {
-    relay1 = true;
     Serial.println("turning on relay 1");
+    relay1On();
     sendIndexPage();
 }
 
 void handleRelay1Off(void) {
-    relay1 = false;
     Serial.println("turning off relay 1");
+    relay1Off();
     sendIndexPage();
 }
 
