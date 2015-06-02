@@ -242,7 +242,8 @@ void sendRootPage(void) {
     message += "\t\t<style>\n\t\t\tbody { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\n\t\t</style>\n\t</head>\n<body>\n\t\t<center>\n";
     message += "\t\t\t<p>Uptime: ";
     message += String(hr, DEC) + ":" + String(min % 60, DEC) + ":" + String(sec % 60, DEC);
-    message += "</p>\n\t\t<\/center>\n\t</body>\n</html>\n";
+    message += "</p>\n<hr>\n";
+    message += "\t\t</center>\n\t</body>\n</html>\n";
     server.send(768, "text/html", message);
 }
 
@@ -270,13 +271,15 @@ void sendAPIRootJSON(void) {
             String(state.mac[5], HEX) + \
         ",\n";
     message += "\t},\n"; // info (static info about client)
-    message += "\t\"system\" = {"; // includes uptime and heap free
+    message += "\t\"system\" = {\n"; // includes uptime and heap free
     message += "\t\t\"uptime\" = {\n\t\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t\t},\n";
     message += "\t\t\"heap\" = " + String(ESP.getFreeHeap(), DEC) + ",\n";
-    message += "\t\t\"ip\" = \"" + state.ip + "\",\n";
-    message += "\t}";   // system end (dynamic info about client)
+    message += "\t\t\"ip\" = \"";
+    message += String(state.ip[0], DEC) + "." + String(state.ip[1], DEC) + "." + String(state.ip[2], DEC) + "." + String(state.ip[3], DEC);
+    message += "\",\n";
+    message += "\t},\n";   // system end (dynamic info about client)
     message += "\t\"features\" = {\n";
-    message += "\t},\n"; // list of available features
+    message += "\t}\n"; // list of available features
     message += "}";
 
     server.send(200, "text/json", message);
