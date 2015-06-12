@@ -23,10 +23,10 @@ PubSubClient client(server);
 #undef IGNORE_GPIO0
 
 // define feature set
-#define GPIO0_RELAY
+//#define GPIO0_RELAY
 //#define GPIO0_DS18B20
-#define GPIO2_RELAY
-//#define GPIO2_DS18B20
+//#define GPIO2_RELAY
+#define GPIO2_DS18B20
 
 #if defined(GPIO0_RELAY) && defined(GPIO0_DS18B20)
     #error "GPIO0 cannot be assigned to a relay AND a DS18B20 simultaneously"
@@ -43,9 +43,12 @@ PubSubClient client(server);
 
 #define HAS_DS18B20
 
+// temperature publishing interval
+#define PUBLISH_INTERVAL_MS 50*1000
+
 #ifdef GPIO0_DS18B20
 #define ONE_WIRE_BUS 0
-#elif GPIO2_DS18B20
+#elif defined(GPIO2_DS18B20)
 #define ONE_WIRE_BUS 2
 #else
 #error "unknown GPIO pin for OneWire bus"
@@ -70,9 +73,10 @@ typedef struct stateStruct {
 #endif
 #ifdef GPIO2_RELAY
     bool gpio2_relay;
-#elif GPIO2_DS18B20
+#elif defined(GPIO2_DS18B20)
 #endif
 #ifdef HAS_DS18B20
+    DeviceAddress ds18b20_idx0;
 #endif
     IPAddress ip;
 } state_t;
@@ -83,6 +87,9 @@ void MQTT_callback(const MQTT::Publish& pub);
 void gpio0_relay(bool on);
 void gpio2_relay(bool on);
 String prepareFeaturesJSON(void);
+#ifdef HAS_DS18B20
+void printDS18B20Address(DeviceAddress deviceAddress);
+#endif
 
 // setup the output serial port (used for debugging)
 // connect to the wifi AP
@@ -111,6 +118,21 @@ void setup(void)
     Serial.println("GPIO2 controls a relay");
     pinMode(2, OUTPUT);
     gpio2_relay(false);
+#endif
+#ifdef HAS_DS18B20
+    DS18B20.begin();
+
+    // locate devices on the bus
+    Serial.print("locating DS18B20 devices...");
+    Serial.print("found ");
+    Serial.print(DS18B20.getDeviceCount(), DEC);
+    Serial.println(" devices.");
+
+    if (!DS18B20.getAddress(state.ds18b20_idx0, 0)) Serial.println("unable to retrieve address for device 0");
+    Serial.println("first device address:");
+    printDS18B20Address(state.ds18b20_idx0);
+
+    DS18B20.requestTemperatures();
 #endif
 
     // connect to WiFi network
@@ -160,8 +182,28 @@ void setup(void)
     Serial.println("MQTT connection made");
 }
 
+#ifdef HAS_DS18B20
+long previousMillis = 0;   // last temperature update
+#endif
 void loop(void) {
+
 	client.loop();
+
+#ifdef HAS_DS18B20
+    unsigned long currentMillis = millis();
+    // check if enough time has passed to warrant publishing
+    if (currentMillis - previousMillis > PUBLISH_INTERVAL_MS) {
+        float temp;
+        previousMillis = currentMillis;
+
+        // retrieve data
+        DS18B20.requestTemperatures();
+        Serial.println("temperature: " + String(temp));
+        temp = DallasTemperature::toFahrenheit(DS18B20.getTempC(state.ds18b20_idx0));
+        // publish temperature
+		client.publish("/temperature/" + String(state.nodename), String(temp));
+    }
+#endif
 }
 
 void MQTT_callback(const MQTT::Publish& pub) {
@@ -199,12 +241,24 @@ void MQTT_callback(const MQTT::Publish& pub) {
 #endif
 }
 
+#ifdef HAS_DS18B20
+// function to print a device address
+void printDS18B20Address(DeviceAddress deviceAddress) {
+    for (uint8_t i = 0; i < 8; i++) {
+        // zero pad the address if necessary
+        if (deviceAddress[i] < 16) Serial.print("0");
+            Serial.print(deviceAddress[i], HEX);
+    }
+}
+#endif
+
 String prepareFeaturesJSON(void) {
     int sec = millis() / 1000;
     int min = sec / 60;
     int hr = min / 60;
 
     String message = "{\n";
+// the below doesn't work because the max MQTT packet is 128 bytes (see MQTT.h)
 #if 0
     message += "\t\"version\" = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
     message += "\t\"info\" = {\n";
