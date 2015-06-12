@@ -154,7 +154,7 @@ void setup(void)
     // get mac address and assemble hostname for mDNS
     WiFi.macAddress(state.mac);
     snprintf(state.nodename, NODENAME_MAX_LENGTH,
-            "ESP%0X%0X", state.mac[4], state.mac[5]
+            "ESP%02X%02X", state.mac[4], state.mac[5]
         );
 	Serial.print("node name: ");
 	Serial.println(state.nodename);
