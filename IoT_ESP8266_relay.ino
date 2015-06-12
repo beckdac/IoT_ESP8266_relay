@@ -23,10 +23,10 @@ PubSubClient client(server);
 #undef IGNORE_GPIO0
 
 // define feature set
-//#define GPIO0_RELAY
+#define GPIO0_RELAY
 //#define GPIO0_DS18B20
-//#define GPIO2_RELAY
-#define GPIO2_DS18B20
+#define GPIO2_RELAY
+//#define GPIO2_DS18B20
 
 #if defined(GPIO0_RELAY) && defined(GPIO0_DS18B20)
     #error "GPIO0 cannot be assigned to a relay AND a DS18B20 simultaneously"
@@ -182,7 +182,9 @@ void setup(void)
 	}
     Serial.println("MQTT connection made");
 
+#ifdef HAS_DS18B20
     publishTemperature();
+#endif
 }
 
 #ifdef HAS_DS18B20
@@ -284,14 +286,14 @@ String prepareFeaturesJSON(void) {
             String(state.mac[5], HEX) + \
         "\",\n";
     message += "\t},\n"; // info (static info about client)
-    message += "\t\"system\" = {\n"; // includes uptime and heap free
-    message += "\t\t\"uptime\" = {\n\t\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t\t},\n";
-    message += "\t\t\"heap\" = " + String(ESP.getFreeHeap(), DEC) + ",\n";
-    message += "\t\t\"ip\" = \"" + String(state.ip) + "\",\n";
+    message += "\t\"system\": {\n"; // includes uptime and heap free
+    message += "\t\t\"uptime\": {\n\t\t\t\"hours\": " + String(hr, DEC) + ",\n\t\t\t\"minutes\": " + String(min % 60, DEC) + ",\n\t\t\t\"seconds\": " + String(sec % 60, DEC) + "\n\t\t},\n";
+    message += "\t\t\"heap\": " + String(ESP.getFreeHeap(), DEC) + ",\n";
+    message += "\t\t\"ip\": \"" + String(state.ip) + "\",\n";
     message += "\t},\n";   // system end (dynamic info about client)
 #endif
     message += "\t\"node\": { \"" + String(state.nodename) + "\" },\n";
-    message += "\t\"features\" = [\n";
+    message += "\t\"features\": [\n";
 	message += "\t\t\"reset\",\n";
 #ifdef GPIO0_RELAY
 	message += "\t\t\"gpio0\",\n";
