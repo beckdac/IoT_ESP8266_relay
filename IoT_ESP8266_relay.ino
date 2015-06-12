@@ -23,10 +23,10 @@ PubSubClient client(server);
 #undef IGNORE_GPIO0
 
 // define feature set
-#define GPIO0_RELAY
+//#define GPIO0_RELAY
 //#define GPIO0_DS18B20
-#define GPIO2_RELAY
-//#define GPIO2_DS18B20
+//#define GPIO2_RELAY
+#define GPIO2_DS18B20
 
 #if defined(GPIO0_RELAY) && defined(GPIO0_DS18B20)
     #error "GPIO0 cannot be assigned to a relay AND a DS18B20 simultaneously"
@@ -154,7 +154,7 @@ void setup(void)
     // get mac address and assemble hostname for mDNS
     WiFi.macAddress(state.mac);
     snprintf(state.nodename, NODENAME_MAX_LENGTH,
-            "ESP%X%X", state.mac[4], state.mac[5]
+            "ESP%0X%0X", state.mac[4], state.mac[5]
         );
 	Serial.print("node name: ");
 	Serial.println(state.nodename);
