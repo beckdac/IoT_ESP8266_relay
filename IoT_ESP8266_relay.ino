@@ -112,13 +112,13 @@ void setup(void)
 #ifndef IGNORE_GPIO0
     pinMode(0, OUTPUT);
 #endif
-    gpio0_relay(false);
+    gpio0_relay(true);
 #endif
 #ifdef GPIO2_RELAY
     // relay 2
     Serial.println("GPIO2 controls a relay");
     pinMode(2, OUTPUT);
-    gpio2_relay(false);
+    gpio2_relay(true);
 #endif
 #ifdef HAS_DS18B20
     DS18B20.begin();
@@ -154,7 +154,7 @@ void setup(void)
     // get mac address and assemble hostname for mDNS
     WiFi.macAddress(state.mac);
     snprintf(state.nodename, NODENAME_MAX_LENGTH,
-            "ESP%X%X", state.mac[5], state.mac[4]
+            "ESP%X%X", state.mac[4], state.mac[5]
         );
 	Serial.print("node name: ");
 	Serial.println(state.nodename);
@@ -176,8 +176,8 @@ void setup(void)
 		client.publish("/node", prepareFeaturesJSON());
 	} else {
     	Serial.println("MQTT connection failed");
-		// wait a minute and restart - note that the long delay will break stuff
-		delay(60000);
+		// wait 10 seconds and restart - note that the long delay will break stuff
+		delay(10000);
 		ESP.reset();
 	}
     Serial.println("MQTT connection made");
@@ -222,31 +222,31 @@ void MQTT_callback(const MQTT::Publish& pub) {
 	Serial.print(" => ");
 	Serial.println(pub.payload_string());
 	if (pub.topic() == "/reset" || pub.topic() == "/reset/" + String(state.nodename)) {
-		Serial.println("Received reset request");
+		Serial.println("received reset request");
 		yield();
 		ESP.reset();
 	}
 #ifdef GPIO0_RELAY
 	if (pub.topic() == "/gpio/" + String(state.nodename) + "/0") {
-		Serial.print("Received GPIO0 message: ");
+		Serial.print("received GPIO0 message: ");
 		if (pub.payload_string().toInt() == 1) {
 			gpio0_relay(true);
-			Serial.println("ON");
+			Serial.println("OFF");
 		} else {
 			gpio0_relay(false);
-			Serial.println("OFF");
+			Serial.println("ON");
 		}
 	}
 #endif
 #ifdef GPIO2_RELAY
 	if (pub.topic() == "/gpio/" + String(state.nodename) + "/2") {
-		Serial.print("Received GPIO2 message: ");
+		Serial.print("received GPIO2 message: ");
 		if (pub.payload_string().toInt() == 1) {
 			gpio2_relay(true);
-			Serial.println("ON");
+			Serial.println("OFF");
 		} else {
 			gpio2_relay(false);
-			Serial.println("OFF");
+			Serial.println("ON");
 		}
 	}
 #endif
@@ -292,9 +292,8 @@ String prepareFeaturesJSON(void) {
     message += "\t\t\"ip\": \"" + String(state.ip) + "\",\n";
     message += "\t},\n";   // system end (dynamic info about client)
 #endif
-    message += "\t\"node\": { \"" + String(state.nodename) + "\" },\n";
+    message += "\t\"node\": \"" + String(state.nodename) + "\",\n";
     message += "\t\"features\": [\n";
-	message += "\t\t\"reset\",\n";
 #ifdef GPIO0_RELAY
 	message += "\t\t\"gpio0\",\n";
 #endif
@@ -304,7 +303,8 @@ String prepareFeaturesJSON(void) {
 #ifdef HAS_DS18B20
 	message += "\t\t\"temperature\",\n";
 #endif
-    message += "\t],\n"; // list of available features
+	message += "\t\t\"reset\"\n";
+    message += "\t]\n"; // list of available features
     message += "}";
 
     //Serial.println(message);
