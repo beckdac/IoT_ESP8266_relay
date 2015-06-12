@@ -89,6 +89,7 @@ void gpio2_relay(bool on);
 String prepareFeaturesJSON(void);
 #ifdef HAS_DS18B20
 void printDS18B20Address(DeviceAddress deviceAddress);
+void publishTemperature(void);
 #endif
 
 // setup the output serial port (used for debugging)
@@ -180,6 +181,8 @@ void setup(void)
 		ESP.reset();
 	}
     Serial.println("MQTT connection made");
+
+    publishTemperature();
 }
 
 #ifdef HAS_DS18B20
@@ -193,18 +196,24 @@ void loop(void) {
     unsigned long currentMillis = millis();
     // check if enough time has passed to warrant publishing
     if (currentMillis - previousMillis > PUBLISH_INTERVAL_MS) {
-        float temp;
         previousMillis = currentMillis;
-
-        // retrieve data
-        DS18B20.requestTemperatures();
-        Serial.println("temperature: " + String(temp));
-        temp = DallasTemperature::toFahrenheit(DS18B20.getTempC(state.ds18b20_idx0));
-        // publish temperature
-		client.publish("/temperature/" + String(state.nodename), String(temp));
+        publishTemperature();
     }
 #endif
 }
+
+#ifdef HAS_DS18B20
+void publishTemperature(void) {
+    float temp;
+
+    // retrieve data
+    DS18B20.requestTemperatures();
+    temp = DallasTemperature::toFahrenheit(DS18B20.getTempC(state.ds18b20_idx0));
+    Serial.println("temperature: " + String(temp));
+    // publish temperature
+    client.publish("/temperature/" + String(state.nodename), String(temp));
+}
+#endif
 
 void MQTT_callback(const MQTT::Publish& pub) {
 	Serial.print(pub.topic());
