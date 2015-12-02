@@ -15,8 +15,10 @@ ESP8266 only Internet-of-Things device
 #include "wificred.h"
 
 // MQTT server
-IPAddress server(192, 168, 1, 1);
-PubSubClient client(server);
+const char *mqtt_server = "mqtt";
+const int mqtt_port = 1883;
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 // define this to silently ignore making any changes to GPIO0
 #define IGNORE_GPIO0
@@ -83,7 +85,7 @@ typedef struct stateStruct {
 state_t state;
 
 // prototypes
-void MQTT_callback(const MQTT::Publish& pub);
+void MQTT_callback(char *topic, byte *payload, unsigned int length);
 void gpio0_relay(bool on);
 void gpio2_relay(bool on);
 String prepareFeaturesJSON(void);
@@ -160,31 +162,42 @@ void setup(void)
 	Serial.println(state.nodename);
 
 	// register with the MQTT server
-	client.set_callback(MQTT_callback);
-	if (client.connect(state.nodename)){
-		// general reset
-		client.subscribe("/reset");
-		// node specific reset
-		client.subscribe("/reset/" + String(state.nodename));
-		// features
+    client.setServer(mqtt_server, mqtt_port);
+	client.setCallback(MQTT_callback);
+}
+
+// try to connect to server every 5 seconds until success or 5 failures occur at which point
+// the ESP is reset
+void reconnect() {
+    int retries = 0;
+
+    while (!client.connected()) {
+        Serial.print("Attempting MQTT connection...");
+        if (client.connect(state.nodename)) {
+            Serial.println("MQTT connection made");
+		    // general reset
+		    client.subscribe("/reset");
+		    // node specific reset
+		    client.subscribe(String("/reset/" + String(state.nodename)).c_str());
+		    // features
 #ifdef GPIO0_RELAY
-		client.subscribe("/gpio/" + String(state.nodename) + "/0");
+		    client.subscribe(String("/gpio/" + String(state.nodename) + "/0").c_str());
 #endif
 #ifdef GPIO2_RELAY
-		client.subscribe("/gpio/" + String(state.nodename) + "/2");
+		    client.subscribe(String("/gpio/" + String(state.nodename) + "/2").c_str());
 #endif
-		client.publish("/node", prepareFeaturesJSON());
-	} else {
-    	Serial.println("MQTT connection failed");
-		// wait 10 seconds and restart - note that the long delay will break stuff
-		delay(10000);
-		ESP.reset();
-	}
-    Serial.println("MQTT connection made");
-
-#ifdef HAS_DS18B20
-    publishTemperature();
-#endif
+		    client.publish("/node", prepareFeaturesJSON().c_str());
+        } else {
+        	Serial.println("MQTT connection failed");
+            Serial.print("client state: ");
+            Serial.println(client.state());
+            // wait 5 seconds before retrying - note that the long delay will break stuff
+            delay(5000);
+            retries++;
+            if (retries > 10)
+                ESP.reset();
+        }
+    }
 }
 
 #ifdef HAS_DS18B20
@@ -192,6 +205,12 @@ long previousMillis = 0;   // last temperature update
 #endif
 void loop(void) {
 
+    if (!client.connected()) {
+        reconnect();
+#ifdef HAS_DS18B20
+        publishTemperature();
+#endif
+    }
 	client.loop();
 
 #ifdef HAS_DS18B20
@@ -213,23 +232,31 @@ void publishTemperature(void) {
     temp = DallasTemperature::toFahrenheit(DS18B20.getTempC(state.ds18b20_idx0));
     Serial.println("temperature: " + String(temp));
     // publish temperature
-    client.publish("/temperature/" + String(state.nodename), String(temp));
+    client.publish(String("/temperature/" + String(state.nodename)).c_str(), String(temp).c_str());
 }
 #endif
 
-void MQTT_callback(const MQTT::Publish& pub) {
-	Serial.print(pub.topic());
+void MQTT_callback(char *topic, byte *payload, unsigned int length) {
+    int i;
+    String topicStr = String(topic);
+    String payloadStr;
+    payloadStr.reserve(length);
+
+    for (i = 0; i < length; ++i)
+        payloadStr += (char)payload[i];
+
+	Serial.print(topicStr);
 	Serial.print(" => ");
-	Serial.println(pub.payload_string());
-	if (pub.topic() == "/reset" || pub.topic() == "/reset/" + String(state.nodename)) {
+	Serial.println(payloadStr);
+	if (topicStr == "/reset" || topicStr == "/reset/" + String(state.nodename)) {
 		Serial.println("received reset request");
 		yield();
 		ESP.reset();
 	}
 #ifdef GPIO0_RELAY
-	if (pub.topic() == "/gpio/" + String(state.nodename) + "/0") {
+	if (topicStr == "/gpio/" + String(state.nodename) + "/0") {
 		Serial.print("received GPIO0 message: ");
-		if (pub.payload_string().toInt() == 1) {
+		if (payloadStr.toInt() == 1) {
 			gpio0_relay(true);
 			Serial.println("OFF");
 		} else {
@@ -239,9 +266,9 @@ void MQTT_callback(const MQTT::Publish& pub) {
 	}
 #endif
 #ifdef GPIO2_RELAY
-	if (pub.topic() == "/gpio/" + String(state.nodename) + "/2") {
+	if (topicStr == "/gpio/" + String(state.nodename) + "/2") {
 		Serial.print("received GPIO2 message: ");
-		if (pub.payload_string().toInt() == 1) {
+		if (payloadStr.toInt() == 1) {
 			gpio2_relay(true);
 			Serial.println("OFF");
 		} else {
@@ -250,6 +277,10 @@ void MQTT_callback(const MQTT::Publish& pub) {
 		}
 	}
 #endif
+    if (topicStr == "/node/" + String(state.nodename)) {
+		Serial.print("received request for status");
+        client.publish("/node", prepareFeaturesJSON().c_str());
+    }
 }
 
 #ifdef HAS_DS18B20
@@ -269,8 +300,8 @@ String prepareFeaturesJSON(void) {
     int hr = min / 60;
 
     String message = "{\n";
-// the below doesn't work because the max MQTT packet is 128 bytes (see MQTT.h)
-#if 0
+#warning the below will only work if you change MQTT_MAX_PACKET_SIZE in PubSubClient.h
+#if 1
     message += "\t\"version\" = {\n\t\t\"major\": " + String(VERSION_MAJOR, DEC) + ",\n\t\t\"minor\": " + String(VERSION_MINOR, DEC) +"\n\t},\n";
     message += "\t\"info\" = {\n";
     message += "\t\t\"chipID\": " + String(state.chipId, DEC) + ",\n";
